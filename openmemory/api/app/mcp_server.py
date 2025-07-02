@@ -36,8 +36,8 @@ from qdrant_client import models as qdrant_models
 # Load environment variables
 load_dotenv()
 
-# Initialize MCP
-mcp = FastMCP("mem0-mcp-server")
+# Initialize MCP with explicit settings to avoid validation errors
+mcp = FastMCP("mem0-mcp-server", settings={"log_level": "INFO"})
 
 # Don't initialize memory client at import time - do it lazily when needed
 def get_memory_client_safe():
