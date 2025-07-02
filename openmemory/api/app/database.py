@@ -6,11 +6,16 @@ from dotenv import load_dotenv
 # load .env file (make sure you have DATABASE_URL set)
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./openmemory.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/openmemory.db")
+# Override to use absolute path if env var uses relative path
+if DATABASE_URL and "./data/" in DATABASE_URL:
+    DATABASE_URL = "sqlite:////data/openmemory.db"
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set in environment")
 
-# SQLAlchemy engine & session
+print(f'Using DATABASE_URL: {DATABASE_URL}')
+
+# SQLAlchemy engine  session
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False}  # Needed for SQLite

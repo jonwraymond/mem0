@@ -36,8 +36,8 @@ from qdrant_client import models as qdrant_models
 # Load environment variables
 load_dotenv()
 
-# Initialize MCP
-mcp = FastMCP("mem0-mcp-server")
+# Initialize MCP with explicit settings to avoid validation errors
+mcp = FastMCP("openmemory-mcp-server", settings={"log_level": "INFO"})
 
 # Don't initialize memory client at import time - do it lazily when needed
 def get_memory_client_safe():
@@ -58,7 +58,7 @@ mcp_router = APIRouter(prefix="/mcp")
 # Initialize SSE transport
 sse = SseServerTransport("/mcp/messages/")
 
-@mcp.tool(description="Add a new memory. This method is called everytime the user informs anything about themselves, their preferences, or anything that has any relevant information which can be useful in the future conversation. This can also be called when the user asks you to remember something.")
+@mcp.tool(name="openmemory_add_memories", description="Add a new memory. This method is called everytime the user informs anything about themselves, their preferences, or anything that has any relevant information which can be useful in the future conversation. This can also be called when the user asks you to remember something.")
 async def add_memories(text: str) -> str:
     uid = user_id_var.get(None)
     client_name = client_name_var.get(None)
@@ -134,7 +134,7 @@ async def add_memories(text: str) -> str:
 
                 db.commit()
 
-            return response
+            return json.dumps(response, indent=2)
         finally:
             db.close()
     except Exception as e:
@@ -142,7 +142,7 @@ async def add_memories(text: str) -> str:
         return f"Error adding to memory: {e}"
 
 
-@mcp.tool(description="Search through stored memories. This method is called EVERYTIME the user asks anything.")
+@mcp.tool(name="openmemory_search_memory", description="Search through stored memories. This method is called EVERYTIME the user asks anything.")
 async def search_memory(query: str) -> str:
     uid = user_id_var.get(None)
     client_name = client_name_var.get(None)
@@ -232,7 +232,7 @@ async def search_memory(query: str) -> str:
                     )
                     db.add(access_log)
                 db.commit()
-            return json.dumps(memories, indent=2)
+            return json.dumps({"memories": memories}, indent=2)
         finally:
             db.close()
     except Exception as e:
@@ -240,7 +240,7 @@ async def search_memory(query: str) -> str:
         return f"Error searching memory: {e}"
 
 
-@mcp.tool(description="List all memories in the user's memory")
+@mcp.tool(name="openmemory_list_memories", description="List all memories in the user's memory")
 async def list_memories() -> str:
     uid = user_id_var.get(None)
     client_name = client_name_var.get(None)
@@ -301,7 +301,7 @@ async def list_memories() -> str:
                         db.add(access_log)
                         filtered_memories.append(memory)
                 db.commit()
-            return json.dumps(filtered_memories, indent=2)
+            return json.dumps({"memories": filtered_memories}, indent=2)
         finally:
             db.close()
     except Exception as e:
@@ -309,7 +309,7 @@ async def list_memories() -> str:
         return f"Error getting memories: {e}"
 
 
-@mcp.tool(description="Delete all memories in the user's memory")
+@mcp.tool(name="openmemory_delete_all_memories", description="Delete all memories in the user's memory")
 async def delete_all_memories() -> str:
     uid = user_id_var.get(None)
     client_name = client_name_var.get(None)
@@ -366,7 +366,7 @@ async def delete_all_memories() -> str:
                 db.add(access_log)
 
             db.commit()
-            return "Successfully deleted all memories"
+            return json.dumps({"status": "success", "message": "Successfully deleted all memories", "deleted_count": len(accessible_memory_ids)}, indent=2)
         finally:
             db.close()
     except Exception as e:

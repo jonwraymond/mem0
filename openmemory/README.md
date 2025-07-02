@@ -1,134 +1,229 @@
+# OpenMemory MCP Server
+
+A complete memory management system with MCP (Model Context Protocol) integration for AI applications.
+
+## 🎯 Features
+
+- **MCP Server Integration**: Full MCP protocol support with prefixed tool names
+- **Vector Memory Storage**: Qdrant-powered semantic memory search
+- **REST API**: Complete HTTP API for memory operations
+- **Docker Stack**: Containerized deployment with health monitoring
+- **Auto-categorization**: AI-powered memory categorization
+- **Web UI**: Optional web interface for memory management
+- **Conflict Resolution**: Prefixed MCP tools (`openmemory_*`) avoid naming conflicts
+
+## 🚀 One-Click Installation
+
+### ⚡ Super Quick Start (Recommended)
+
+```bash
+# One command to rule them all!
+./install.sh
+```
+
+**That's it!** The script will:
+- ✅ Check all prerequisites (Docker, etc.)
+- ✅ Prompt for your OpenAI API key
+- ✅ Set up the complete stack automatically
+- ✅ Test all functionality
+- ✅ Show you the status and next steps
+
+### 🔧 Alternative: Direct Setup
+
+```bash
+# Run the setup script directly
+./setup-openmemory.sh
+```
+
+### 📋 Manual Setup (if needed)
+
+1. **Prerequisites**
+   ```bash
+   # Install Docker Desktop
+   # Install Docker Compose
+   # Install curl and jq (optional)
+   ```
+
+2. **Environment Setup**
+   ```bash
+   # Create .env file
+   cat > .env << EOF
+   OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_OR_KEY=your_openai_api_key_here
+   OPENAI_EMBED_KEY=your_openai_api_key_here
+   USER=your_username
+   EOF
+   ```
+
+3. **Start the Stack**
+   ```bash
+   docker-compose up -d --build
+   ```
+
+## 🛠️ MCP Tools
+
+The OpenMemory MCP server provides these tools with `openmemory_` prefix to avoid conflicts:
+
+### `openmemory_add_memories`
+Add new memories to the system.
+
+```python
+# Example usage
+result = await call_mcp_tool("openmemory_add_memories", {
+    "text": "I prefer working in quiet coffee shops for coding"
+})
+```
+
+### `openmemory_search_memory`
+Search through stored memories using semantic similarity.
+
+```python
+# Example usage
+memories = await call_mcp_tool("openmemory_search_memory", {
+    "query": "work preferences"
+})
+```
+
+### `openmemory_list_memories`
+List all stored memories with metadata.
+
+```python
+# Example usage
+all_memories = await call_mcp_tool("openmemory_list_memories", {})
+```
+
+### `openmemory_delete_all_memories`
+Delete all memories (with permissions).
+
+```python
+# Example usage
+result = await call_mcp_tool("openmemory_delete_all_memories", {})
+```
+
+## 📊 API Endpoints
+
+### Memory Operations
+- `POST /api/v1/memories/` - Add new memory
+- `POST /api/v1/memories/filter` - Search/filter memories
+- `GET /api/v1/memories/{id}` - Get specific memory
+- `DELETE /api/v1/memories/{id}` - Delete memory
+
+### MCP Protocol
+- `GET /mcp/{client_name}/sse/{user_id}` - SSE connection for MCP
+- `POST /mcp/messages/` - MCP message endpoint
+
+### Health & Status
+- `GET /health` - Health check
+- `GET /docs` - API documentation
+
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   MCP Client    │────│ OpenMemory MCP  │────│   Qdrant DB     │
+│  (Warp/Agent)   │    │     Server      │    │ (Vector Store)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                         ┌─────────────────┐
+                         │   SQLite DB     │
+                         │  (Metadata)     │
+                         └─────────────────┘
+```
+
+## 🧪 Testing
+
+### Test MCP Tools
+```bash
+# Test via curl
+curl -X POST "http://localhost:8766/mcp/test/sse/jraymond/messages/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "openmemory_add_memories",
+      "arguments": {"text": "Test memory"}
+    },
+    "id": 1
+  }'
+```
+
+### Test REST API
+```bash
+# Add memory
+curl -X POST "http://localhost:8766/api/v1/memories/" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Test memory", "user_id": "jraymond"}'
+
+# Search memories  
+curl -X POST "http://localhost:8766/api/v1/memories/filter" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "jraymond", "search_query": "test"}'
+```
+
+**Quick Links:**
+- 🌐 **API Docs**: http://localhost:8766/docs
+- 🔍 **Vector DB**: http://localhost:6334
+- 🖥️ **Web UI**: http://localhost:3000
+- ❤️ **Health**: http://localhost:8766/health
+
 # OpenMemory
 
-OpenMemory is your personal memory layer for LLMs - private, portable, and open-source. Your memories live locally, giving you complete control over your data. Build AI applications with personalized memories while keeping your data secure.
+This directory contains the backend API for OpenMemory, built with FastAPI and SQLAlchemy. This also runs the Mem0 MCP Server that you can use with MCP clients to remember things.
 
-![OpenMemory](https://github.com/user-attachments/assets/3c701757-ad82-4afa-bfbe-e049c2b4320b)
+## Quick Start with Docker (Recommended)
 
-## Easy Setup
+The easiest way to get started is using Docker. Make sure you have Docker and Docker Compose installed.
 
-### Prerequisites
-- Docker
-- OpenAI API Key
-
-You can quickly run OpenMemory by running the following command:
-
+1. Build the containers:
 ```bash
-curl -sL https://raw.githubusercontent.com/mem0ai/mem0/main/openmemory/run.sh | bash
+make build
 ```
 
-You should set the `OPENAI_API_KEY` as a global environment variable:
-
+2. Create `.env` file:
 ```bash
-export OPENAI_API_KEY=your_api_key
+make env
 ```
 
-You can also set the `OPENAI_API_KEY` as a parameter to the script:
+Once you run this command, edit the file `api/.env` and enter the `OPENAI_API_KEY`.
 
+3. Start the services:
 ```bash
-curl -sL https://raw.githubusercontent.com/mem0ai/mem0/main/openmemory/run.sh | OPENAI_API_KEY=your_api_key bash
+make up
 ```
 
-## Prerequisites
+The API will be available at `http://localhost:8765`
 
-- Docker and Docker Compose
-- Python 3.9+ (for backend development)
-- Node.js (for frontend development)
-- OpenAI API Key (required for LLM interactions, run `cp api/.env.example api/.env` then change **OPENAI_API_KEY** to yours)
+### Common Docker Commands
 
-## Quickstart
+- View logs: `make logs`
+- Open shell in container: `make shell`
+- Run database migrations: `make migrate`
+- Run tests: `make test`
+- Run tests and clean up: `make test-clean`
+- Stop containers: `make down`
 
-### 1. Set Up Environment Variables
+## API Documentation
 
-Before running the project, you need to configure environment variables for both the API and the UI.
-
-You can do this in one of the following ways:
-
-- **Manually**:  
-  Create a `.env` file in each of the following directories:
-  - `/api/.env`
-  - `/ui/.env`
-
-- **Using `.env.example` files**:  
-  Copy and rename the example files:
-
-  ```bash
-  cp api/.env.example api/.env
-  cp ui/.env.example ui/.env
-  ```
-
- - **Using Makefile** (if supported):  
-    Run:
-  
-   ```bash
-   make env
-   ```
-- #### Example `/api/.env`
-
-```env
-OPENAI_API_KEY=sk-xxx
-USER=<user-id> # The User Id you want to associate the memories with 
-```
-- #### Example `/ui/.env`
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8765
-NEXT_PUBLIC_USER_ID=<user-id> # Same as the user id for environment variable in api
-```
-
-### 2. Build and Run the Project
-You can run the project using the following two commands:
-```bash
-make build # builds the mcp server and ui
-make up  # runs openmemory mcp server and ui
-```
-
-After running these commands, you will have:
-- OpenMemory MCP server running at: http://localhost:8765 (API documentation available at http://localhost:8765/docs)
-- OpenMemory UI running at: http://localhost:3000
-
-#### UI not working on `localhost:3000`?
-
-If the UI does not start properly on [http://localhost:3000](http://localhost:3000), try running it manually:
-
-```bash
-cd ui
-pnpm install
-pnpm dev
-```
-
-### MCP Client Setup
-
-Use the following one step command to configure OpenMemory Local MCP to a client. The general command format is as follows:
-
-```bash
-npx @openmemory/install local http://localhost:8765/mcp/<client-name>/sse/<user-id> --client <client-name>
-```
-
-Replace `<client-name>` with the desired client name and `<user-id>` with the value specified in your environment variables.
-
+Once the server is running, you can access the API documentation at:
+- Swagger UI: `http://localhost:8765/docs`
+- ReDoc: `http://localhost:8765/redoc`
 
 ## Project Structure
 
-- `api/` - Backend APIs + MCP server
-- `ui/` - Frontend React application
+- `app/`: Main application code
+  - `models.py`: Database models
+  - `database.py`: Database configuration
+  - `routers/`: API route handlers
+- `migrations/`: Database migration files
+- `tests/`: Test files
+- `alembic/`: Alembic migration configuration
+- `main.py`: Application entry point
 
-## Contributing
+## Development Guidelines
 
-We are a team of developers passionate about the future of AI and open-source software. With years of experience in both fields, we believe in the power of community-driven development and are excited to build tools that make AI more accessible and personalized.
-
-We welcome all forms of contributions:
-- Bug reports and feature requests
-- Documentation improvements
-- Code contributions
-- Testing and feedback
-- Community support
-
-How to contribute:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b openmemory/feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin openmemory/feature/amazing-feature`)
-5. Open a Pull Request
-
-Join us in building the future of AI memory management! Your contributions help make OpenMemory better for everyone.
+- Follow PEP 8 style guide
+- Use type hints
+- Write tests for new features
+- Update documentation when making changes
+- Run migrations for database changes

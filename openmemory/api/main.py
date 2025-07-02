@@ -83,5 +83,23 @@ app.include_router(apps_router)
 app.include_router(stats_router)
 app.include_router(config_router)
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+        "service": "OpenMemory MCP Server"
+    }
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "OpenMemory MCP Server",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
 # Add pagination support
 add_pagination(app)

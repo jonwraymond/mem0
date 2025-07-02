@@ -1,36 +1,136 @@
 services:
+  # Vector Database - Qdrant
   mem0_store:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:latest
+    container_name: openmemory-qdrant
+    restart: always
     ports:
-      - "6333:6333"
+      - "6334:6333"
+      - "6335:6334"  # Admin interface
     volumes:
-      - mem0_storage:/mem0/storage
-  openmemory-mcp:
-    image: mem0/openmemory-mcp
-    build: api/
+      - ./data/qdrant:/qdrant/storage
     environment:
-      - USER
-      - API_KEY
-    env_file:
-      - api/.env
-    depends_on:
-      - mem0_store
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    # Removed health check - not needed for basic operation
+    networks:
+      - openmemory_network
+
+  # OpenMemory MCP Server
+  openmemory-mcp:
+    image: mem0/openmemory-mcp:latest
+    container_name: openmemory-mcp-server
+    restart: always
+    build:
+      context: ./api
+      dockerfile: Dockerfile
     ports:
-      - "8765:8765"
+      - "8766:8765"
     volumes:
       - ./api:/usr/src/openmemory
+      - ./data/api:/data
+    environment:
+      # API Keys - Using OpenAI for both LLM and embeddings
+      - OPENAI_API_KEY=${OPENAI_EMBED_KEY}
+      - OPENAI_EMBED_KEY=${OPENAI_EMBED_KEY}
+      
+      # LLM Configuration - OpenAI GPT-4o model
+      - MEM0_LLM_PROVIDER=openai
+      - MEM0_LLM_CONFIG_MODEL=gpt-4o
+      - MEM0_LLM_CONFIG_TEMPERATURE=0.1
+      - MEM0_LLM_CONFIG_MAX_TOKENS=2000
+      
+      # Embeddings Configuration - OpenAI embedding model
+      - MEM0_EMBEDDER_PROVIDER=openai
+      - MEM0_EMBEDDER_CONFIG_MODEL=text-embedding-3-large
+      - MEM0_EMBEDDER_CONFIG_API_KEY=${OPENAI_EMBED_KEY}
+      
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=8765
+      - USER=jraymond
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+      
+      # Vector Store Configuration
+      - MEM0_VECTOR_STORE_PROVIDER=qdrant
+      - MEM0_VECTOR_STORE_CONFIG_HOST=mem0_store
+      - MEM0_VECTOR_STORE_CONFIG_PORT=6333
+      
+      # Database URLs
+      - QDRANT_URL=http://mem0_store:6333
+      - DATABASE_URL=sqlite:////data/openmemory.db
+    env_file:
+      - .env
+    depends_on:
+      - mem0_store
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8765/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - openmemory_network
     command: >
-      sh -c "uvicorn main:app --host 0.0.0.0 --port 8765 --reload --workers 4"
+      sh -c "uvicorn main:app --host 0.0.0.0 --port 8765 --reload --workers 1"
+
+  # OpenMemory UI
   openmemory-ui:
-    build:
-      context: ui/
-      dockerfile: Dockerfile
     image: mem0/openmemory-ui:latest
+    container_name: openmemory-ui
+    restart: always
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-      - NEXT_PUBLIC_USER_ID=${USER}
+      - NEXT_PUBLIC_API_URL=http://localhost:8766
+      - NEXT_PUBLIC_USER_ID=jraymond
+      - NODE_ENV=production
+    depends_on:
+      - openmemory-mcp
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - openmemory_network
+
+  # Monitoring and Health Check Service
+  healthcheck-monitor:
+    image: alpine:latest
+    container_name: openmemory-monitor
+    restart: always
+    command: >
+      sh -c "
+        apk add --no-cache curl && 
+        while true; do 
+          echo \"[$(date)] Health Check Report:\" && 
+          curl -f http://openmemory-mcp-server:8765/health > /dev/null 2>&1 && echo \"✓ MCP Server: Healthy\" || echo \"✗ MCP Server: Unhealthy\" &&
+          curl -f http://mem0_store:6333/health > /dev/null 2>&1 && echo \"✓ Qdrant: Healthy\" || echo \"✗ Qdrant: Unhealthy\" &&
+          curl -f http://openmemory-ui:3000 > /dev/null 2>&1 && echo \"✓ UI: Healthy\" || echo \"✗ UI: Unhealthy\" &&
+          echo \"---\" &&
+          sleep 60
+        done
+      "
+    depends_on:
+      - openmemory-mcp
+      - openmemory-ui
+      - mem0_store
+    networks:
+      - openmemory_network
+
+networks:
+  openmemory_network:
+    driver: bridge
+    name: openmemory_network
 
 volumes:
-  mem0_storage:
+  qdrant_data:
+    driver: local
+  api_data:
+    driver: local
