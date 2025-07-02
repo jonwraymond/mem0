@@ -110,9 +110,9 @@ services:
         apk add --no-cache curl && 
         while true; do 
           echo \"[$(date)] Health Check Report:\" && 
-          curl -f http://openmemory-local-mcp-server:8765/health > /dev/null 2>&1 && echo \"✓ MCP Server: Healthy\" || echo \"✗ MCP Server: Unhealthy\" &&
-          curl -f http://mem0_store:6333/health > /dev/null 2>&1 && echo \"✓ Qdrant: Healthy\" || echo \"✗ Qdrant: Unhealthy\" &&
-          curl -f http://openmemory-local-ui:3000 > /dev/null 2>&1 && echo \"✓ UI: Healthy\" || echo \"✗ UI: Unhealthy\" &&
+          curl -f http://openmemory-local-mcp-server:8765/health > /dev/null 2>&1 && echo "✓ MCP Server: Healthy" || echo "✗ MCP Server: Unhealthy" &&
+          curl -f http://mem0_store:6333/health > /dev/null 2>&1 && echo "✓ Qdrant: Healthy" || echo "✗ Qdrant: Unhealthy" &&
+          curl -f http://openmemory-local-ui:3000 > /dev/null 2>&1 && echo "✓ UI: Healthy" || echo "✗ UI: Unhealthy" &&
           echo \"---\" &&
           sleep 60
         done
