@@ -33,6 +33,7 @@ import hashlib
 import socket
 import platform
 
+from typing import Optional
 from mem0 import Memory
 from app.database import SessionLocal
 from app.models import Config as ConfigModel
@@ -136,7 +137,7 @@ def reset_memory_client():
 
 def get_default_memory_config():
     """Get default memory client configuration with sensible defaults."""
-    return {
+    config = {
         "vector_store": {
             "provider": "qdrant",
             "config": {
@@ -155,14 +156,39 @@ def get_default_memory_config():
             }
         },
         "embedder": {
-            "provider": "openai",
+            "provider": os.environ.get("MEM0_EMBEDDER_PROVIDER", "openai"),
             "config": {
-                "model": "text-embedding-3-small",
-                "api_key": "env:OPENAI_API_KEY"
+                "model": os.environ.get("MEM0_EMBEDDER_CONFIG_MODEL", "text-embedding-3-small"),
+                "api_key": "env:OPENAI_EMBED_KEY",
+                "embedding_dims": 3072 if os.environ.get("MEM0_EMBEDDER_CONFIG_MODEL") == "text-embedding-3-large" else 1536
             }
         },
         "version": "v1.1"
     }
+    
+    # Add graph store configuration if environment variables are set
+    graph_provider = os.environ.get("MEM0_GRAPH_STORE_PROVIDER")
+    if graph_provider:
+        print(f"Configuring graph store: {graph_provider}")
+        config["graph_store"] = {
+            "provider": graph_provider,
+            "config": {}
+        }
+        
+        # Add Memgraph-specific configuration
+        if graph_provider == "memgraph":
+            graph_url = os.environ.get("MEM0_GRAPH_STORE_CONFIG_URL", "bolt://memgraph:7687")
+            graph_username = os.environ.get("MEM0_GRAPH_STORE_CONFIG_USERNAME", "memgraph")
+            graph_password = os.environ.get("MEM0_GRAPH_STORE_CONFIG_PASSWORD", "memgraph")
+            
+            config["graph_store"]["config"] = {
+                "url": graph_url,
+                "username": graph_username,
+                "password": graph_password
+            }
+            print(f"Graph store configured with URL: {graph_url}")
+    
+    return config
 
 
 def _parse_environment_variables(config_dict):
@@ -190,7 +216,7 @@ def _parse_environment_variables(config_dict):
     return config_dict
 
 
-def get_memory_client(custom_instructions: str = None):
+def get_memory_client(custom_instructions: Optional[str] = None):
     """
     Get or initialize the Mem0 client.
 
@@ -240,6 +266,13 @@ def get_memory_client(custom_instructions: str = None):
                     if "embedder" in mem0_config and mem0_config["embedder"] is not None:
                         config["embedder"] = mem0_config["embedder"]
                         
+                        # Ensure embedding_dims is present based on model
+                        embedder_config = config["embedder"].get("config", {})
+                        if isinstance(embedder_config, dict) and "embedding_dims" not in embedder_config:
+                            model = embedder_config.get("model", "text-embedding-3-small")
+                            embedder_config["embedding_dims"] = 3072 if "large" in model else 1536
+                            print(f"Added embedding_dims to DB config: {embedder_config['embedding_dims']} for model: {model}")
+                        
                         # Fix Ollama URLs for Docker if needed
                         if config["embedder"].get("provider") == "ollama":
                             config["embedder"] = _fix_ollama_urls(config["embedder"])
@@ -254,14 +287,37 @@ def get_memory_client(custom_instructions: str = None):
             # Continue with default configuration if database config can't be loaded
 
         # Use custom_instructions parameter first, then fall back to database value
-        instructions_to_use = custom_instructions or db_custom_instructions
-        if instructions_to_use:
-            config["custom_fact_extraction_prompt"] = instructions_to_use
+        if custom_instructions:
+            config["custom_fact_extraction_prompt"] = custom_instructions
+        else:
+            # Type guard to ensure db_custom_instructions is treated as str
+            if isinstance(db_custom_instructions, str) and len(db_custom_instructions) > 0:
+                config["custom_fact_extraction_prompt"] = db_custom_instructions
 
         # ALWAYS parse environment variables in the final config
         # This ensures that even default config values like "env:OPENAI_API_KEY" get parsed
         print("Parsing environment variables in final config...")
         config = _parse_environment_variables(config)
+        
+        # Ensure embedding_dims is always present in embedder config
+        if "embedder" in config and "config" in config["embedder"]:
+            if "embedding_dims" not in config["embedder"]["config"]:
+                model = config["embedder"]["config"].get("model", "text-embedding-3-small")
+                config["embedder"]["config"]["embedding_dims"] = 3072 if "large" in model else 1536
+                print(f"Added embedding_dims: {config['embedder']['config']['embedding_dims']} for model: {model}")
+
+        # CRITICAL: Ensure embedding_model_dims is set in vector_store config
+        # This is required for Qdrant to create collections with the correct dimensions
+        print(f"DEBUG: Checking embedder config: {config.get('embedder', {})}")
+        if "embedder" in config and "config" in config["embedder"] and "embedding_dims" in config["embedder"]["config"]:
+            if "vector_store" not in config:
+                config["vector_store"] = {}
+            if "config" not in config["vector_store"]:
+                config["vector_store"]["config"] = {}
+            config["vector_store"]["config"]["embedding_model_dims"] = config["embedder"]["config"]["embedding_dims"]
+            print(f"Set embedding_model_dims in vector_store config: {config['vector_store']['config']['embedding_model_dims']}")
+        else:
+            print("WARNING: Could not set embedding_model_dims - embedder config missing or incomplete")
 
         # Check if config has changed by comparing hashes
         current_config_hash = _get_config_hash(config)
@@ -269,6 +325,9 @@ def get_memory_client(custom_instructions: str = None):
         # Only reinitialize if config changed or client doesn't exist
         if _memory_client is None or _config_hash != current_config_hash:
             print(f"Initializing memory client with config hash: {current_config_hash}")
+            # Debug: print the embedder config
+            print(f"Embedder config: {json.dumps(config.get('embedder', {}), indent=2)}")
+            print(f"Full config: {json.dumps(config, indent=2)}")
             try:
                 _memory_client = Memory.from_config(config_dict=config)
                 _config_hash = current_config_hash
@@ -289,4 +348,5 @@ def get_memory_client(custom_instructions: str = None):
 
 
 def get_default_user_id():
+    # Always returns the default user ID for system operations. This is intentional.
     return "default_user"

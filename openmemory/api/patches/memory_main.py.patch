@@ -1,0 +1,15 @@
+--- a/memory/main.py
++++ b/memory/main.py
+@@ -168,6 +168,12 @@
+         embedding_collection_name = config_dict.get("vector_store", {}).get("config", {}).get("embedding_collection_name", None)
+         if embedding_collection_name:
+             config_dict["vector_store"]["config"]["embedding_collection_name"] = embedding_collection_name
++        
++        # Always set embedding_model_dims from embedder config if available
++        if "embedder" in config_dict and "config" in config_dict["embedder"] and "embedding_dims" in config_dict["embedder"]["config"]:
++            if "vector_store" not in config_dict:
++                config_dict["vector_store"] = {"config": {}}
++            config_dict["vector_store"]["config"]["embedding_model_dims"] = config_dict["embedder"]["config"]["embedding_dims"]
+ 
+         if "graph_store" in config_dict:
+             if "vector_store" not in config_dict and "embedder" in config_dict:

@@ -24,7 +24,7 @@ def check_memory_access_permissions(
         bool: True if access is allowed, False otherwise
     """
     # Check if memory is active
-    if memory.state != MemoryState.active:
+    if memory.state is not MemoryState.active:
         return False
 
     # If no app_id provided, only check memory state
@@ -37,7 +37,7 @@ def check_memory_access_permissions(
         return False
 
     # Check if app is paused/inactive
-    if not app.is_active:
+    if app and app.is_active is not True:
         return False
 
     # Check app-specific access controls

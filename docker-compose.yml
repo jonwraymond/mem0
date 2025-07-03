@@ -1,136 +1,118 @@
+version: '3.8'
+
 services:
   # Vector Database - Qdrant
   mem0_store:
     image: qdrant/qdrant:latest
-    container_name: openmemory-local-qdrant
+    container_name: openmemory-qdrant
     restart: always
     ports:
-      - "6334:6333"
-      - "6335:6334"  # Admin interface
+      - "6333:6333"
+      - "6334:6334"
     volumes:
-      - ./data/qdrant:/qdrant/storage
+      - qdrant_storage:/qdrant/storage
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
-    # Removed health check - not needed for basic operation
+    networks:
+      - openmemory_network
+
+  # Graph Database - Memgraph with MAGE
+  memgraph:
+    image: memgraph/memgraph-mage:latest
+    container_name: openmemory-memgraph
+    restart: always
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    command: ["--log-level=INFO", "--also-log-to-stderr"]
+    environment:
+      - MEMGRAPH_USER=memgraph
+      - MEMGRAPH_PASSWORD=memgraph
+    volumes:
+      - memgraph_data:/usr/lib/memgraph
+    networks:
+      - openmemory_network
+
+  # Memgraph Lab - UI for Graph Database
+  memgraph-lab:
+    image: memgraph/lab:latest
+    container_name: openmemory-memgraph-lab
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - QUICK_CONNECT_MG_HOST=memgraph
+      - QUICK_CONNECT_MG_PORT=7687
+    depends_on:
+      - memgraph
     networks:
       - openmemory_network
 
   # OpenMemory MCP Server
   openmemory-mcp:
     image: mem0/openmemory-mcp:latest
-    container_name: openmemory-local-mcp-server
-    restart: always
-    build:
-      context: ./api
+    build: 
+      context: ./openmemory/api
       dockerfile: Dockerfile
+    container_name: openmemory-mcp-server
+    restart: always
     ports:
-      - "8766:8765"
-    volumes:
-      - ./api:/usr/src/openmemory
-      - ./data/api:/data
-    environment:
-      # API Keys - Using OpenAI for both LLM and embeddings
-      - OPENAI_API_KEY=${OPENAI_EMBED_KEY}
-      - OPENAI_EMBED_KEY=${OPENAI_EMBED_KEY}
-      
-      # LLM Configuration - OpenAI GPT-4o model
-      - MEM0_LLM_PROVIDER=openai
-      - MEM0_LLM_CONFIG_MODEL=gpt-4o
-      - MEM0_LLM_CONFIG_TEMPERATURE=0.1
-      - MEM0_LLM_CONFIG_MAX_TOKENS=2000
-      
-      # Embeddings Configuration - OpenAI embedding model
-      - MEM0_EMBEDDER_PROVIDER=openai
-      - MEM0_EMBEDDER_CONFIG_MODEL=text-embedding-3-large
-      - MEM0_EMBEDDER_CONFIG_API_KEY=${OPENAI_EMBED_KEY}
-      
-      # Server Configuration
-      - HOST=0.0.0.0
-      - PORT=8765
-      - USER=jraymond
-      - DEBUG=true
-      - LOG_LEVEL=INFO
-      
-      # Vector Store Configuration
-      - MEM0_VECTOR_STORE_PROVIDER=qdrant
-      - MEM0_VECTOR_STORE_CONFIG_HOST=mem0_store
-      - MEM0_VECTOR_STORE_CONFIG_PORT=6333
-      
-      # Database URLs
-      - QDRANT_URL=http://mem0_store:6333
-      - DATABASE_URL=sqlite:////data/openmemory.db
+      - "8765:8765"
     env_file:
       - .env
+    environment:
+      # Pass through the API keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_EMBED_KEY=${OPENAI_EMBED_KEY}
+      # Embedder configuration
+      - MEM0_EMBEDDER_PROVIDER=openai
+      - MEM0_EMBEDDER_CONFIG_MODEL=text-embedding-3-large
+      # Override specific settings for Graph Memory
+      - MEM0_GRAPH_STORE_PROVIDER=memgraph
+      - MEM0_GRAPH_STORE_CONFIG_URL=bolt://memgraph:7687
+      - MEM0_GRAPH_STORE_CONFIG_USERNAME=memgraph
+      - MEM0_GRAPH_STORE_CONFIG_PASSWORD=memgraph
+      # Ensure vector store points to our Qdrant instance
+      - MEM0_VECTOR_STORE_CONFIG_HOST=mem0_store
+      - MEM0_VECTOR_STORE_CONFIG_PORT=6333
     depends_on:
       - mem0_store
-    healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8765/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      - memgraph
+    volumes:
+      - ./openmemory/api:/usr/src/openmemory
+      - openmemory_data:/usr/src/openmemory/data
+    command: uvicorn main:app --host 0.0.0.0 --port 8765 --reload --workers 4
     networks:
       - openmemory_network
-    command: >
-      sh -c "uvicorn main:app --host 0.0.0.0 --port 8765 --reload --workers 1"
 
   # OpenMemory UI
   openmemory-ui:
-    image: mem0/openmemory-ui:latest
-    container_name: openmemory-local-ui
-    restart: always
     build:
-      context: ./ui
+      context: ./openmemory/ui
       dockerfile: Dockerfile
+    image: mem0/openmemory-ui:latest
+    container_name: openmemory-ui
+    restart: always
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8766
-      - NEXT_PUBLIC_USER_ID=jraymond
-      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8765
+      - NEXT_PUBLIC_USER_ID=${USER:-default}
     depends_on:
       - openmemory-mcp
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - openmemory_network
-
-  # Monitoring and Health Check Service
-  healthcheck-monitor:
-    image: alpine:latest
-    container_name: openmemory-local-monitor
-    restart: always
-    command: >
-      sh -c "
-        apk add --no-cache curl && 
-        while true; do 
-          echo \"[$(date)] Health Check Report:\" && 
-          curl -f http://openmemory-local-mcp-server:8765/health > /dev/null 2>&1 && echo "✓ MCP Server: Healthy" || echo "✗ MCP Server: Unhealthy" &&
-          curl -f http://mem0_store:6333/health > /dev/null 2>&1 && echo "✓ Qdrant: Healthy" || echo "✗ Qdrant: Unhealthy" &&
-          curl -f http://openmemory-local-ui:3000 > /dev/null 2>&1 && echo "✓ UI: Healthy" || echo "✗ UI: Unhealthy" &&
-          echo \"---\" &&
-          sleep 60
-        done
-      "
-    depends_on:
-      - openmemory-mcp
-      - openmemory-ui
-      - mem0_store
     networks:
       - openmemory_network
 
 networks:
   openmemory_network:
     driver: bridge
-    name: openmemory-local_network
+    name: openmemory_network
 
 volumes:
-  qdrant_data:
+  qdrant_storage:
     driver: local
-  api_data:
+  memgraph_data:
     driver: local
+  openmemory_data:
+    driver: local 

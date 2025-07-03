@@ -134,7 +134,7 @@ async def add_memories(text: str) -> str:
 
                 db.commit()
 
-            return json.dumps(response, indent=2)
+            return json.dumps(response)
         finally:
             db.close()
     except Exception as e:
