@@ -309,6 +309,164 @@ async def list_memories() -> str:
         return f"Error getting memories: {e}"
 
 
+@mcp.tool(name="openmemory_update_memory", description="Update a specific memory by ID with new content")
+async def update_memory(memory_id: str, new_content: str) -> str:
+    uid = user_id_var.get(None)
+    client_name = client_name_var.get(None)
+    if not uid:
+        return "Error: user_id not provided"
+    if not client_name:
+        return "Error: client_name not provided"
+
+    # Get memory client safely
+    memory_client = get_memory_client_safe()
+    if not memory_client:
+        return "Error: Memory system is currently unavailable. Please try again later."
+
+    try:
+        db = SessionLocal()
+        try:
+            # Get or create user and app
+            user, app = get_user_and_app(db, user_id=uid, app_id=client_name)
+
+            # Convert memory_id to UUID
+            try:
+                memory_uuid = uuid.UUID(memory_id)
+            except ValueError:
+                return f"Error: Invalid memory ID format: {memory_id}"
+
+            # Check if memory exists and user has access
+            memory = db.query(Memory).filter(Memory.id == memory_uuid, Memory.user_id == user.id).first()
+            if not memory:
+                return f"Error: Memory {memory_id} not found or not accessible"
+
+            # Check permissions
+            if not check_memory_access_permissions(db, memory, app.id):
+                return f"Error: No permission to update memory {memory_id}"
+
+            # Store old content for history
+            old_content = memory.content
+
+            # Update memory using the memory client
+            response = memory_client.update(
+                memory_id=memory_uuid,
+                data=new_content,
+                metadata={
+                    "source_app": "openmemory",
+                    "mcp_client": client_name,
+                }
+            )
+
+            # Update database record
+            memory.content = new_content
+            memory.updated_at = datetime.datetime.now(datetime.UTC)
+
+            # Create history entry
+            history = MemoryStatusHistory(
+                memory_id=memory_uuid,
+                changed_by=user.id,
+                old_state=MemoryState.active,
+                new_state=MemoryState.active,
+                metadata_={"old_content": old_content, "new_content": new_content}
+            )
+            db.add(history)
+
+            # Create access log entry
+            access_log = MemoryAccessLog(
+                memory_id=memory_uuid,
+                app_id=app.id,
+                access_type="update",
+                metadata_={"operation": "memory_update", "memory_id": memory_id}
+            )
+            db.add(access_log)
+
+            db.commit()
+            return json.dumps({
+                "status": "success", 
+                "message": f"Successfully updated memory {memory_id}",
+                "memory_id": memory_id,
+                "new_content": new_content
+            }, indent=2)
+        finally:
+            db.close()
+    except Exception as e:
+        logging.exception(f"Error updating memory {memory_id}: {e}")
+        return f"Error updating memory {memory_id}: {e}"
+
+
+@mcp.tool(name="openmemory_delete_memory", description="Delete a specific memory by ID")
+async def delete_memory(memory_id: str) -> str:
+    uid = user_id_var.get(None)
+    client_name = client_name_var.get(None)
+    if not uid:
+        return "Error: user_id not provided"
+    if not client_name:
+        return "Error: client_name not provided"
+
+    # Get memory client safely
+    memory_client = get_memory_client_safe()
+    if not memory_client:
+        return "Error: Memory system is currently unavailable. Please try again later."
+
+    try:
+        db = SessionLocal()
+        try:
+            # Get or create user and app
+            user, app = get_user_and_app(db, user_id=uid, app_id=client_name)
+
+            # Convert memory_id to UUID
+            try:
+                memory_uuid = uuid.UUID(memory_id)
+            except ValueError:
+                return f"Error: Invalid memory ID format: {memory_id}"
+
+            # Check if memory exists and user has access
+            memory = db.query(Memory).filter(Memory.id == memory_uuid, Memory.user_id == user.id).first()
+            if not memory:
+                return f"Error: Memory {memory_id} not found or not accessible"
+
+            # Check permissions
+            if not check_memory_access_permissions(db, memory, app.id):
+                return f"Error: No permission to delete memory {memory_id}"
+
+            # Delete from vector store
+            try:
+                memory_client.delete(memory_uuid)
+            except Exception as delete_error:
+                logging.warning(f"Failed to delete memory {memory_id} from vector store: {delete_error}")
+
+            # Update memory state and create history entry
+            now = datetime.datetime.now(datetime.UTC)
+            memory.state = MemoryState.deleted
+            memory.deleted_at = now
+
+            # Create history entry
+            history = MemoryStatusHistory(
+                memory_id=memory_uuid,
+                changed_by=user.id,
+                old_state=MemoryState.active,
+                new_state=MemoryState.deleted
+            )
+            db.add(history)
+
+            # Create access log entry
+            access_log = MemoryAccessLog(
+                memory_id=memory_uuid,
+                app_id=app.id,
+                access_type="delete",
+                metadata_={"operation": "single_delete", "memory_id": memory_id}
+            )
+            db.add(access_log)
+
+            db.commit()
+            return json.dumps({"status": "success", "message": f"Successfully deleted memory {memory_id}", "memory_id": memory_id}, indent=2)
+        finally:
+            db.close()
+    except Exception as e:
+        logging.exception(f"Error deleting memory {memory_id}: {e}")
+        return f"Error deleting memory {memory_id}: {e}"
+
+
 @mcp.tool(name="openmemory_delete_all_memories", description="Delete all memories in the user's memory")
 async def delete_all_memories() -> str:
     uid = user_id_var.get(None)

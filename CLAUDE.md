@@ -85,11 +85,19 @@ mcp__serena__write_memory("memory_name", "Architecture decisions, code patterns,
 - Version important architectural decisions
 - Keep debugging solutions current
 
-### 🗑️ Memory Deletion
+### 🔄 Memory Updates & Deletion
 ```python
-# Clean up outdated information
+# Update specific memory with new content
+mcp__openmemory-local__update_memory(memory_id="uuid", new_content="Updated information")
+
+# Delete specific memory by ID
+mcp__openmemory-local__delete_memory(memory_id="uuid")
+
+# Delete all memories (bulk cleanup)
+mcp__openmemory-local__delete_all_memories()
+
+# Clean up project-specific outdated information
 mcp__serena__delete_memory("outdated_memory_name")
-# Note: OpenMemory-local uses delete_all_memories for bulk cleanup
 ```
 
 ## 🛠️ Comprehensive Workflow Examples
@@ -306,7 +314,13 @@ ast-grep -p 'function $COMPONENT($PROPS) { return <$$$JSX> }' -l tsx
 ### Available MCP Tools
 - **Sequential Thinking**: `mcp__MCP_DOCKER__sequentialthinking` - Structured problem solving
 - **Task Agent**: For complex multi-step operations and open-ended search
-- **OpenMemory-local**: Cross-application persistent memory
+- **OpenMemory-local**: Cross-application persistent memory with full CRUD operations
+  - `mcp__openmemory-local__add_memories` - Add new memories
+  - `mcp__openmemory-local__search_memory` - Search existing memories
+  - `mcp__openmemory-local__list_memories` - List all memories
+  - `mcp__openmemory-local__update_memory` - Update specific memory by ID
+  - `mcp__openmemory-local__delete_memory` - Delete specific memory by ID
+  - `mcp__openmemory-local__delete_all_memories` - Bulk delete all memories
 - **Serena**: Semantic code analysis and project-specific memory
 - **Browser automation**, **Git operations**, **File operations**, **Search tools**
 
